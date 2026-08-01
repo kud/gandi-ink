@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react"
-import { Box, Text, useInput } from "ink"
+import { Box, Text, useInput, useStdout } from "ink"
 import {
   FooterHints,
   Select,
@@ -94,7 +94,8 @@ const HINTS: Record<Mode, [string, string][]> = {
 // absolutely positioned — an overlay that is not budgeted for pushes the footer
 // off the bottom of the screen instead of covering the list.
 const CHROME_ROWS = 8
-const ASSUMED_ROWS = 24
+// Only used when stdout reports no size at all — a pipe, or a test harness.
+const FALLBACK_ROWS = 24
 
 const clock = (at: Date): string => at.toTimeString().slice(0, 8)
 
@@ -107,6 +108,7 @@ export const GandiBody = ({
   apiKey,
   domain: initialDomain,
 }: GandiBodyProps) => {
+  const { stdout } = useStdout()
   const [key] = useState(() => apiKey ?? getApiKey())
   const [mode, setMode] = useState<Mode>(initialDomain ? "dns" : "domains")
   const [phase, setPhase] = useState<Phase>("loading")
@@ -494,7 +496,10 @@ export const GandiBody = ({
         : phase === "confirming" || phase === "result"
           ? 2
           : 0
-  const listRows = Math.max(1, ASSUMED_ROWS - CHROME_ROWS - overlayRows)
+  const listRows = Math.max(
+    1,
+    (stdout?.rows ?? FALLBACK_ROWS) - CHROME_ROWS - overlayRows,
+  )
 
   return (
     <Box flexDirection="column" paddingX={1}>

@@ -1,8 +1,11 @@
 import { describe, it, expect, vi } from "vitest"
 import { render } from "ink-testing-library"
-import type { GandiAPI } from "@kud/gandi"
+import type { DnsRecord, Domain, GandiAPI, WebRedir } from "@kud/gandi"
 import { GandiBody } from "./gandi-body.js"
 
+// Fixtures carry only the fields the components read. The casts are deliberate:
+// spelling out every field of a Gandi API response would bury what each test is
+// actually about, and the component's own types still police how they are used.
 const DOMAINS = [
   {
     fqdn: "kud.io",
@@ -10,7 +13,7 @@ const DOMAINS = [
     dates: { registry_ends_at: "2027-01-01T00:00:00Z" },
   },
   { fqdn: "example.net", autorenew: false, dates: {} },
-]
+] as unknown as Domain[]
 
 const RECORDS = [
   {
@@ -18,12 +21,13 @@ const RECORDS = [
     rrset_type: "CNAME",
     rrset_ttl: 10800,
     rrset_values: ["webredir.gandi.net."],
+    rrset_href: "https://api.gandi.net/v5/livedns/domains/kud.io/records/www",
   },
-]
+] as unknown as DnsRecord[]
 
 const REDIRECTS = [
   { host: "trakt.kud.io", type: "http301", url: "https://trakt.tv/users/kud" },
-]
+] as unknown as WebRedir[]
 
 // A façade rather than the real client — which is exactly why GandiBody takes
 // `api` and `apiKey` as props. Without that seam the component would reach for
