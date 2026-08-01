@@ -1,0 +1,69 @@
+{
+  "name": "@kud/gandi-ink",
+  "version": "0.1.0",
+  "description": "Ink components for browsing Gandi domains, DNS records, and web redirects",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix"
+  },
+  "keywords": [
+    "gandi",
+    "dns",
+    "livedns",
+    "domains",
+    "web-redirect",
+    "ink",
+    "tui"
+  ],
+  "homepage": "https://kud.io/projects/gandi-ink",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/kud/gandi-ink.git"
+  },
+  "author": "kud",
+  "license": "MIT",
+  "engines": {
+    "node": ">=20"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "dependencies": {
+    "@kud/ink-ui": "0.12.0",
+    "@kud/gandi": "0.1.0"
+  },
+  "peerDependencies": {
+    "ink": ">=7",
+    "react": ">=19"
+  },
+  "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "@types/node": "26.1.2",
+    "@types/react": "19.2.14",
+    "eslint": "10.8.0",
+    "eslint-config-prettier": "10.1.8",
+    "eslint-plugin-react-hooks": "7.1.1",
+    "ink": "7.1.0",
+    "ink-testing-library": "4.0.0",
+    "react": "19.2.7",
+    "tsup": "8.5.1",
+    "typescript": "5.9.3",
+    "typescript-eslint": "8.65.0",
+    "vitest": "4.1.10"
+  }
+}
