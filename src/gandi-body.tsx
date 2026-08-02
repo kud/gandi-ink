@@ -2,6 +2,7 @@ import { useEffect, useState } from "react"
 import { Box, Text, useInput, useStdout } from "ink"
 import {
   FooterHints,
+  KeyValue,
   Select,
   Spinner,
   StatusMessage,
@@ -37,9 +38,14 @@ export type GandiBodyProps = {
   domain?: string
 }
 
-// Two orthogonal axes. `Mode` is which tab you are on; `Phase` is what the
-// screen is doing. Keeping them separate is what lets one useInput dispatch by
-// phase first and mode second, with no focus manager and no nested handlers.
+// Three axes, and the first two are the navigation model. `View` is the depth —
+// you are either picking a domain or inside one — and `Tab` only means anything
+// at the inner depth, because DNS records and web redirects belong to a domain
+// rather than sitting beside it. `Phase` is orthogonal to both: what the screen
+// is doing right now. Keeping them separate is what lets a single useInput
+// dispatch by phase, then view, with no focus manager and no nested handlers.
+type View = "domains" | "domain"
+type Tab = "dns" | "redirects" | "info"
 type Phase =
   | "loading"
   | "browsing"
@@ -48,7 +54,6 @@ type Phase =
   | "result"
   | "actions"
   | "editing"
-type Mode = "domains" | "dns" | "redirects"
 
 type ItemAction = {
   label: string
@@ -56,27 +61,27 @@ type ItemAction = {
   run: () => void | Promise<void>
 }
 
-const TABS: TabItem<Mode>[] = [
-  { value: "domains", label: "Domains" },
+const TABS: TabItem<Tab>[] = [
   { value: "dns", label: "DNS" },
   { value: "redirects", label: "Redirects" },
+  { value: "info", label: "Info" },
 ]
 
-const HINTS: Record<Mode, [string, string][]> = {
-  domains: [
-    ["↑↓", "navigate"],
-    ["→", "open domain"],
-    ["↵", "actions"],
-    ["r", "reload"],
-    ["tab", "switch"],
-    ["q", "quit"],
-  ],
+const DOMAIN_HINTS: [string, string][] = [
+  ["↑↓", "navigate"],
+  ["↵/→", "open"],
+  ["r", "reload"],
+  ["q", "quit"],
+]
+
+const TAB_HINTS: Record<Tab, [string, string][]> = {
   dns: [
     ["↑↓", "navigate"],
     ["↵", "actions"],
     ["e", "edit"],
     ["d", "delete"],
-    ["r", "reload"],
+    ["tab", "switch"],
+    ["←", "domains"],
     ["q", "quit"],
   ],
   redirects: [
@@ -84,7 +89,15 @@ const HINTS: Record<Mode, [string, string][]> = {
     ["↵", "actions"],
     ["e", "edit target"],
     ["d", "delete"],
+    ["tab", "switch"],
+    ["←", "domains"],
+    ["q", "quit"],
+  ],
+  info: [
+    ["↵", "actions"],
     ["r", "reload"],
+    ["tab", "switch"],
+    ["←", "domains"],
     ["q", "quit"],
   ],
 }
@@ -110,7 +123,9 @@ export const GandiBody = ({
 }: GandiBodyProps) => {
   const { stdout } = useStdout()
   const [key] = useState(() => apiKey ?? getApiKey())
-  const [mode, setMode] = useState<Mode>(initialDomain ? "dns" : "domains")
+
+  const [view, setView] = useState<View>(initialDomain ? "domain" : "domains")
+  const [tab, setTab] = useState<Tab>("dns")
   const [phase, setPhase] = useState<Phase>("loading")
   const [cursor, setCursor] = useState(0)
 
@@ -133,6 +148,9 @@ export const GandiBody = ({
   const [onEditSubmit, setOnEditSubmit] = useState<
     ((value: string) => void) | null
   >(null)
+
+  const selectedDomain = (): Domain | undefined =>
+    domains.find((entry) => entry.fqdn === domain)
 
   const showResult = (text: string, failed = false) => {
     setMessage(text)
@@ -194,21 +212,38 @@ export const GandiBody = ({
   const loadRedirects = (target: string) =>
     load(async () => setRedirects(await api.listRedirects(key, target)))
 
-  // Each view owns what it loads, so switching never leaves the previous view's
-  // rows on screen under a new tab's heading.
-  const reload = (next: Mode = mode): Promise<void> => {
-    if (next === "domains") return loadDomains()
-    if (!domain) {
-      showResult("Select a domain first — press → on the Domains tab.", true)
-      return Promise.resolve()
-    }
-    return next === "dns" ? loadDns(domain) : loadRedirects(domain)
+  // Each tab owns what it loads, so switching never leaves the previous tab's
+  // rows on screen under a new heading.
+  const loadTab = (which: Tab, target: string): Promise<void> =>
+    which === "dns"
+      ? loadDns(target)
+      : which === "redirects"
+        ? loadRedirects(target)
+        : Promise.resolve(setPhase("browsing"))
+
+  const reload = (): Promise<void> => {
+    if (view === "domains") return loadDomains()
+    return domain ? loadTab(tab, domain) : loadDomains()
   }
 
-  const switchTo = (next: Mode) => {
-    setMode(next)
+  const openDomain = (fqdn: string) => {
+    setDomain(fqdn)
+    setView("domain")
+    setTab("dns")
     setCursor(0)
-    void reload(next)
+    void loadDns(fqdn)
+  }
+
+  const backToDomains = () => {
+    setView("domains")
+    setCursor(0)
+    void loadDomains()
+  }
+
+  const switchTab = (next: Tab) => {
+    setTab(next)
+    setCursor(0)
+    if (domain) void loadTab(next, domain)
   }
 
   useEffect(() => {
@@ -216,11 +251,13 @@ export const GandiBody = ({
   }, [])
 
   const rowCount = (): number =>
-    mode === "domains"
+    view === "domains"
       ? domains.length
-      : mode === "dns"
+      : tab === "dns"
         ? records.length
-        : redirects.length
+        : tab === "redirects"
+          ? redirects.length
+          : 0
 
   const domainActions = (): ItemAction[] => {
     const selected = domains[cursor]
@@ -228,20 +265,9 @@ export const GandiBody = ({
     const fqdn = selected.fqdn
     return [
       {
-        label: "Open DNS records",
-        detail: `Browse the LiveDNS zone for ${fqdn}`,
-        run: () => {
-          setDomain(fqdn)
-          switchTo("dns")
-        },
-      },
-      {
-        label: "Open web redirects",
-        detail: `Browse web forwarding for ${fqdn}`,
-        run: () => {
-          setDomain(fqdn)
-          switchTo("redirects")
-        },
+        label: "Open",
+        detail: `Browse DNS and redirects for ${fqdn}`,
+        run: () => openDomain(fqdn),
       },
       {
         label: selected.autorenew ? "Turn autorenew off" : "Turn autorenew on",
@@ -398,15 +424,41 @@ export const GandiBody = ({
     ]
   }
 
+  const infoActions = (): ItemAction[] => {
+    const selected = selectedDomain()
+    if (!selected?.fqdn) return []
+    const fqdn = selected.fqdn
+    return [
+      {
+        label: selected.autorenew ? "Turn autorenew off" : "Turn autorenew on",
+        detail: `Currently ${selected.autorenew ? "on" : "off"}`,
+        run: () =>
+          triggerConfirm(
+            `${selected.autorenew ? "Disable" : "Enable"} autorenew for ${fqdn}?`,
+            () =>
+              runAction(async () => {
+                await api.setAutorenew(key, fqdn, !selected.autorenew)
+                await loadDomains()
+                showResult(
+                  `Autorenew ${selected.autorenew ? "disabled" : "enabled"} for ${fqdn}`,
+                )
+              }),
+          ),
+      },
+    ]
+  }
+
   // Actions are derived from the selection rather than fixed, so the modal never
   // offers something that would fail — no "edit target" on an empty redirect
-  // list, no "renew" when nothing is highlighted.
+  // list, no domain action when nothing is highlighted.
   const actionsFor = (): ItemAction[] =>
-    mode === "domains"
+    view === "domains"
       ? domainActions()
-      : mode === "dns"
+      : tab === "dns"
         ? dnsActions()
-        : redirectActions()
+        : tab === "redirects"
+          ? redirectActions()
+          : infoActions()
 
   const openActions = () => {
     const available = actionsFor()
@@ -456,31 +508,34 @@ export const GandiBody = ({
     if (phase !== "browsing") return
 
     if (input === "q") return onExit()
-
-    if (inputKey.tab) {
-      const at = TABS.findIndex((tab) => tab.value === mode)
-      // Adding length before the modulo keeps shift+tab from going negative on
-      // the first tab, where -1 % 3 is -1 rather than the last index.
-      const step = inputKey.shift ? TABS.length - 1 : 1
-      switchTo(TABS[(at + step) % TABS.length]!.value)
-      return
-    }
+    if (input === "r") return void reload()
     if (inputKey.upArrow) return setCursor((c) => Math.max(0, c - 1))
     if (inputKey.downArrow)
       return setCursor((c) => Math.min(Math.max(0, rowCount() - 1), c + 1))
-    if (inputKey.return) return openActions()
-    if (input === "r") return void reload()
 
-    if (mode === "domains" && inputKey.rightArrow) {
-      const selected = domains[cursor]
-      if (selected?.fqdn) {
-        setDomain(selected.fqdn)
-        switchTo("dns")
+    if (view === "domains") {
+      // Enter and → agree here: both mean "go into this domain". The action
+      // modal would only ever offer that plus autorenew, so making Enter open
+      // it directly costs nothing and saves a keystroke on the common path.
+      if (inputKey.return || inputKey.rightArrow) {
+        const selected = domains[cursor]
+        if (selected?.fqdn) openDomain(selected.fqdn)
+        return
       }
+      if (input === "a") return openActions()
       return
     }
-    if (mode !== "domains" && inputKey.leftArrow) return switchTo("domains")
 
+    if (inputKey.leftArrow || inputKey.escape) return backToDomains()
+    if (inputKey.tab) {
+      const at = TABS.findIndex((entry) => entry.value === tab)
+      // Adding length before the modulo keeps shift+tab from going negative on
+      // the first tab, where -1 % 3 is -1 rather than the last index.
+      const step = inputKey.shift ? TABS.length - 1 : 1
+      switchTab(TABS[(at + step) % TABS.length]!.value)
+      return
+    }
+    if (inputKey.return) return openActions()
     // `e` and `d` are shortcuts onto entries the action modal already offers,
     // so there is exactly one implementation of each behind both routes.
     if (input === "e") return runShortcut("Edit")
@@ -501,34 +556,50 @@ export const GandiBody = ({
     (stdout?.rows ?? FALLBACK_ROWS) - CHROME_ROWS - overlayRows,
   )
 
+  const info = selectedDomain()
+
   return (
     <Box flexDirection="column" paddingX={1}>
-      <Tabs active={mode} items={TABS} />
+      {view === "domains" ? (
+        <Text bold color={colors.accent}>
+          Domains
+        </Text>
+      ) : (
+        <Tabs active={tab} items={TABS} />
+      )}
+
       <Box marginBottom={1}>
         <Text color={colors.muted}>
-          {domain ?? "all domains"}
+          {view === "domains" ? `${domains.length} domains` : domain}
           {readAt ? `  ·  read at ${clock(readAt)}` : ""}
         </Text>
       </Box>
 
       {busy ? (
         <Spinner label={phase === "executing" ? "Working…" : "Loading…"} />
-      ) : mode === "domains" ? (
+      ) : view === "domains" ? (
         <DomainList domains={domains} selected={cursor} rows={listRows} />
-      ) : mode === "dns" ? (
-        <DnsList
-          records={records}
-          selected={cursor}
-          rows={listRows}
-          emptyText={domain ? "No DNS records" : "Select a domain first"}
-        />
+      ) : tab === "dns" ? (
+        <DnsList records={records} selected={cursor} rows={listRows} />
+      ) : tab === "redirects" ? (
+        <RedirectList redirects={redirects} selected={cursor} rows={listRows} />
       ) : (
-        <RedirectList
-          redirects={redirects}
-          selected={cursor}
-          rows={listRows}
-          emptyText={domain ? "No web redirects" : "Select a domain first"}
-        />
+        <Box flexDirection="column">
+          <KeyValue label="Domain" value={info?.fqdn ?? domain ?? "—"} />
+          <KeyValue
+            label="Status"
+            value={(info?.status ?? []).join(", ") || "—"}
+          />
+          <KeyValue label="Autorenew" value={info?.autorenew ? "on" : "off"} />
+          <KeyValue
+            label="Expires"
+            value={info?.dates?.registry_ends_at?.slice(0, 10) ?? "—"}
+          />
+          <KeyValue
+            label="Nameservers"
+            value={(info?.nameservers ?? []).join(", ") || "—"}
+          />
+        </Box>
       )}
 
       {phase === "actions" && (
@@ -584,7 +655,9 @@ export const GandiBody = ({
       )}
 
       <Box marginTop={1}>
-        <FooterHints hints={HINTS[mode]} />
+        <FooterHints
+          hints={view === "domains" ? DOMAIN_HINTS : TAB_HINTS[tab]}
+        />
       </Box>
     </Box>
   )

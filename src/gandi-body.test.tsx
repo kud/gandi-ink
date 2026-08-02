@@ -62,13 +62,24 @@ describe("mounting", () => {
     expect(lastFrame()).toContain("example.net")
   })
 
-  it("shows every tab", async () => {
+  // DNS records and web redirects belong to a domain, so they are not offered
+  // until one is chosen. Showing them as peers of the domain list invited
+  // "select a domain first" errors on tabs the user could already see.
+  it("offers no per-domain tabs until a domain is chosen", async () => {
     const { lastFrame } = mount()
     await settled()
     const frame = lastFrame() ?? ""
     expect(frame).toContain("Domains")
+    expect(frame).not.toContain("Redirects")
+  })
+
+  it("shows the per-domain tabs once inside a domain", async () => {
+    const { lastFrame } = mount({ domain: "kud.io" })
+    await settled()
+    const frame = lastFrame() ?? ""
     expect(frame).toContain("DNS")
     expect(frame).toContain("Redirects")
+    expect(frame).toContain("Info")
   })
 
   it("uses the client it is handed rather than a stored credential", async () => {
@@ -100,12 +111,26 @@ describe("navigating", () => {
     expect(lastFrame()).not.toContain("trakt.kud.io.kud.io")
   })
 
-  it("tells you to pick a domain before showing DNS", async () => {
-    const { lastFrame, stdin } = mount()
+  it("drills into a domain with → and loads its records", async () => {
+    const listDnsRecords = vi.fn(async () => RECORDS)
+    const { lastFrame, stdin } = mount({
+      api: api({ listDnsRecords } as Partial<GandiAPI>),
+    })
     await settled()
-    stdin.write("\t")
+    stdin.write("\u001B[C") // right arrow
     await settled()
-    expect(lastFrame()).toContain("Select a domain first")
+    expect(listDnsRecords).toHaveBeenCalledWith("test-key", "kud.io")
+    expect(lastFrame()).toContain("DNS")
+  })
+
+  it("comes back out to the domain list with ←", async () => {
+    const { lastFrame, stdin } = mount({ domain: "kud.io" })
+    await settled()
+    stdin.write("\u001B[D") // left arrow
+    await settled()
+    const frame = lastFrame() ?? ""
+    expect(frame).toContain("example.net")
+    expect(frame).not.toContain("Redirects")
   })
 
   it("quits through onExit rather than owning the terminal", async () => {

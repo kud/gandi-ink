@@ -45,7 +45,7 @@
   },
   "dependencies": {
     "@kud/gandi": "0.1.0",
-    "@kud/ink-ui": "0.13.1"
+    "@kud/ink-ui": "0.13.2"
   },
   "peerDependencies": {
     "ink": ">=7",
