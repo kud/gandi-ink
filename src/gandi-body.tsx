@@ -19,6 +19,7 @@ import {
   type GandiAPI,
   type WebRedir,
 } from "@kud/gandi"
+import { listRows } from "./lib/rows.js"
 import { DomainList } from "./components/domain-list.js"
 import { DnsList } from "./components/dns-list.js"
 import { RedirectList } from "./components/redirect-list.js"
@@ -551,10 +552,7 @@ export const GandiBody = ({
         : phase === "confirming" || phase === "result"
           ? 2
           : 0
-  const listRows = Math.max(
-    1,
-    (stdout?.rows ?? FALLBACK_ROWS) - CHROME_ROWS - overlayRows,
-  )
+  const rows = listRows(stdout?.rows, CHROME_ROWS, overlayRows, FALLBACK_ROWS)
 
   const info = selectedDomain()
 
@@ -578,11 +576,11 @@ export const GandiBody = ({
       {busy ? (
         <Spinner label={phase === "executing" ? "Working…" : "Loading…"} />
       ) : view === "domains" ? (
-        <DomainList domains={domains} selected={cursor} rows={listRows} />
+        <DomainList domains={domains} selected={cursor} rows={rows} />
       ) : tab === "dns" ? (
-        <DnsList records={records} selected={cursor} rows={listRows} />
+        <DnsList records={records} selected={cursor} rows={rows} />
       ) : tab === "redirects" ? (
-        <RedirectList redirects={redirects} selected={cursor} rows={listRows} />
+        <RedirectList redirects={redirects} selected={cursor} rows={rows} />
       ) : (
         <Box flexDirection="column">
           <KeyValue label="Domain" value={info?.fqdn ?? domain ?? "—"} />
