@@ -1,6 +1,6 @@
 {
   "name": "@kud/gandi-ink",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Ink components for browsing Gandi domains, DNS records, and web redirects",
   "type": "module",
   "exports": {
