@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react"
-import { Box, Text, useInput, useStdout } from "ink"
+import { Box, Text, useInput, useWindowSize } from "ink"
 import {
   FooterHints,
   KeyValue,
@@ -108,7 +108,7 @@ const TAB_HINTS: Record<Tab, [string, string][]> = {
 // absolutely positioned — an overlay that is not budgeted for pushes the footer
 // off the bottom of the screen instead of covering the list.
 const CHROME_ROWS = 8
-// Only used when stdout reports no size at all — a pipe, or a test harness.
+// Only used when no terminal size can be resolved — a pipe, or a test harness.
 const FALLBACK_ROWS = 24
 
 const clock = (at: Date): string => at.toTimeString().slice(0, 8)
@@ -122,7 +122,7 @@ export const GandiBody = ({
   apiKey,
   domain: initialDomain,
 }: GandiBodyProps) => {
-  const { stdout } = useStdout()
+  const { rows: windowRows } = useWindowSize()
   const [key] = useState(() => apiKey ?? getApiKey())
 
   const [view, setView] = useState<View>(initialDomain ? "domain" : "domains")
@@ -552,7 +552,7 @@ export const GandiBody = ({
         : phase === "confirming" || phase === "result"
           ? 2
           : 0
-  const rows = listRows(stdout?.rows, CHROME_ROWS, overlayRows, FALLBACK_ROWS)
+  const rows = listRows(windowRows, CHROME_ROWS, overlayRows, FALLBACK_ROWS)
 
   const info = selectedDomain()
 
